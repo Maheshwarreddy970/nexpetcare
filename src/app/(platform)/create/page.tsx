@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 
 export default function CreateTenantPage() {
   const router = useRouter();
+
+  
   const [step, setStep] = useState<'form' | 'otp'>('form');
   const [formData, setFormData] = useState({
     name: '',
