@@ -1,0 +1,345 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==================== PLATFORM LEVEL ====================
+
+model PlatformAdmin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Tenant/Store Model
+model Tenant {
+  id    String  @id @default(cuid())
+  name  String // Store/Clinic name
+  slug  String  @unique // URL slug (e.g., "pawsome-grooming")
+  email String  @unique
+  phone String?
+
+  // Subscription info
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  stripePriceId          String?
+  stripeCurrentPeriodEnd DateTime?
+  subscriptionStatus     String    @default("active") // active, canceled, past_due
+
+  // OTP verification
+  emailVerified Boolean   @default(false)
+  otpCode       String?
+  otpExpiry     DateTime?
+
+  // Store settings (JSON for dynamic website content)
+  websiteData Json? // Stores hero text, about, images URLs etc
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  admins      TenantAdmin[]
+  customers   Customer[]
+  services    Service[]
+  bookings    Booking[]
+  coupons     Coupon[]
+  teamMembers TeamMember[]
+
+  @@index([slug])
+  @@index([email])
+}
+
+// ==================== TENANT ADMIN (Auth handled separately) ====================
+
+model TenantAdmin {
+  id           String @id @default(cuid())
+  email        String
+  passwordHash String // Store password from Better Auth
+  name         String
+  role         String @default("admin") // "root" or "admin"
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+}
+
+// Team members with invitation system
+model TeamMember {
+  id     String  @id @default(cuid())
+  email  String
+  name   String?
+  status String  @default("pending") // pending, active
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  invitedAt  DateTime  @default(now())
+  acceptedAt DateTime?
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+}
+
+// ==================== CUSTOMER LEVEL ====================
+
+model Customer {
+  id           String @id @default(cuid())
+  email        String
+  phone        String
+  name         String
+  passwordHash String // Better Auth handles this
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  lastVisit    DateTime?
+  totalSpent   Float     @default(0)
+  bookingCount Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookings        Booking[]
+  customerCoupons CustomerCoupon[]
+  pets            Pet[]
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, lastVisit])
+  @@index([tenantId, totalSpent])
+}
+
+// Pet information
+model Pet {
+  id     String   @id @default(cuid())
+  name   String
+  type   String // dog, cat, bird, etc
+  breed  String?
+  age    Int?
+  gender String? // male, female
+  images String[] // Array of image URLs from Cloudinary
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  tenantId String
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([tenantId])
+}
+
+// ==================== SERVICES ====================
+
+model Service {
+  id          String  @id @default(cuid())
+  name        String // e.g., "Full Grooming", "Training"
+  slug        String // URL-friendly name
+  description String?
+
+  // Pricing
+  price         Float
+  isDiscount    Boolean @default(false)
+  originalPrice Float?
+  discountPrice Float?
+
+  // Duration and availability
+  duration Int // in minutes
+  images   String[] // Array of image URLs
+
+  isActive Boolean @default(true)
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([slug, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+}
+
+// ==================== BOOKINGS ====================
+
+model Booking {
+  id          String   @id @default(cuid())
+  bookingDate DateTime // Selected appointment date & time
+  status      String   @default("pending") // pending, confirmed, completed, cancelled
+
+  notes       String?
+  totalAmount Float
+
+  // Relations
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  petId String
+  pet   Pet    @relation(fields: [petId], references: [id])
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Coupon applied
+  couponId String?
+  coupon   Coupon? @relation(fields: [couponId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([tenantId, status])
+  @@index([tenantId, bookingDate])
+}
+
+// ==================== COUPONS & MARKETING ====================
+
+model Coupon {
+  id          String  @id @default(cuid())
+  code        String // e.g., "SAVE10"
+  description String?
+
+  // Discount details
+  discountType  String // "percentage" or "fixed"
+  discountValue Float // 10 (for 10%) or 10.00 (for $10)
+
+  // Validity
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  customerCoupons CustomerCoupon[]
+  bookings        Booking[]
+
+  @@unique([code, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, expiresAt])
+}
+
+// Junction table for customer coupons
+model CustomerCoupon {
+  id String @id @default(cuid())
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  couponId String
+  coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  usedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([customerId, couponId])
+  @@index([customerId])
+  @@index([couponId])
+}
+
+// Marketing campaign tracking
+model MarketingCampaign {
+  id        String @id @default(cuid())
+  name      String
+  subject   String
+  emailBody String @db.Text
+
+  // Target filters (stored as JSON)
+  targetFilters  Json // {lastVisit: "30days", minSpent: 100, etc}
+  recipientCount Int  @default(0)
+
+  sentAt   DateTime?
+  tenantId String
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+// ==================== BETTER AUTH TABLES ====================
+// Better Auth will auto-generate these, but here's the structure
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  name          String?
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions Session[]
+  accounts Account[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@unique([identifier, value])
+}
