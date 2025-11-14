@@ -1,64 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Stripe from 'stripe';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-10-29.clover',
-});
+import { stripe } from '@/lib/stripe/config';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { email, priceId, metadata } = body;
+    const { email, priceId, formData } = await req.json();
 
-    // ✅ Validate price ID
-    if (!priceId) {
+    if (!email || !priceId) {
       return NextResponse.json(
-        { error: 'Price ID is required' },
+        { error: 'Missing email or priceId' },
         { status: 400 }
       );
     }
 
-    // ✅ Get base URL with protocol
-    const baseUrl = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'http://localhost:3000';
-
-    // ✅ Construct absolute URLs
-    const successUrl = `${baseUrl}/create/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${baseUrl}/create`;
+    if (!formData || !formData.storeName || !formData.storePassword) {
+      return NextResponse.json(
+        { error: 'Missing form data' },
+        { status: 400 }
+      );
+    }
 
     console.log('Creating checkout session:', {
       email,
       priceId,
-      successUrl,
-      cancelUrl,
+      storeName: formData.storeName,
     });
 
     const session = await stripe.checkout.sessions.create({
-      customer_email: email,
       payment_method_types: ['card'],
+      mode: 'subscription',
+      customer_email: email,
       line_items: [
         {
-          price: priceId, // ✅ This must be a valid Stripe price ID
+          price: priceId,
           quantity: 1,
         },
       ],
-      mode: 'subscription',
-      success_url: successUrl,
-      cancel_url: cancelUrl,
+      // ✅ Simple redirect without session_id
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/create/success`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/create`,
+      // ✅ Pass all formData in metadata
       metadata: {
-        name: metadata.name,
-        email: metadata.email,
-        phone: metadata.phone,
-        storeName: metadata.storeName,
-        storePassword: metadata.storePassword,
+        email,
+        storeName: formData.storeName,
+        storePassword: formData.storePassword,
+        name: formData.name || '',
+        phone: formData.phone || '',
       },
     });
 
     console.log('✅ Checkout session created:', session.id);
-    return NextResponse.json({ url: session.url });
+
+    return NextResponse.json({
+      success: true,
+      url: session.url,
+      sessionId: session.id,
+    });
   } catch (error: any) {
-    console.error('❌ Stripe checkout error:', error);
+    console.error('❌ Checkout error:', error.message);
     return NextResponse.json(
-      { error: error.message || 'Checkout failed' },
+      { error: error.message },
       { status: 500 }
     );
   }
