@@ -1,85 +1,138 @@
-import { prisma } from '@/lib/store/prisma';
-import { Phone, Mail, Calendar } from 'lucide-react';
+'use client';
 
-interface CustomersPageProps {
-  params: Promise<{ store: string }>;
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { getCustomersAction, deleteCustomerAction } from '@/actions/admin/customers';
+
+interface Customer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  _count: { bookings: number };
+  createdAt: string; // ISO string
 }
 
-export default async function CustomersPage(props: CustomersPageProps) {
-  const params = await props.params;
+export default function CustomersPage() {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const tenant = await prisma.tenant.findUnique({
-    where: { slug: params.store },
-  });
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
 
-  if (!tenant) {
-    return <div>Store not found</div>;
+  const fetchCustomers = async () => {
+    const sessionStr = localStorage.getItem('adminSession');
+    if (!sessionStr) return;
+
+    const session = JSON.parse(sessionStr);
+    const result = await getCustomersAction(session.tenantId);
+
+    if (result.success) {
+      setCustomers(result.customers as Customer[]);
+    }
+    setLoading(false);
+  };
+
+  const handleDelete = async (customerId: string) => {
+    if (!confirm('Are you sure?')) return;
+
+    const result = await deleteCustomerAction(customerId);
+    if (result.success) {
+      setCustomers(customers.filter((c) => c.id !== customerId));
+    }
+  };
+
+  const filteredCustomers = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+      </div>
+    );
   }
 
-  const customers = await prisma.customer.findMany({
-    where: { tenantId: tenant.id },
-    include: {
-      _count: {
-        select: { bookings: true },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Customers</h1>
-        <p className="text-gray-600 mt-2">Manage your customers</p>
+    <div>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Customers</h1>
+        <p className="text-gray-600 mt-2">Manage your customer base</p>
+      </div>
+
+      <div className="mb-6">
+        <input
+          type="text"
+          placeholder="Search customers..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+        />
       </div>
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
         {customers.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-gray-600">No customers yet</p>
+          <div className="p-8 text-center text-gray-500">
+            <div className="text-6xl mb-4">👥</div>
+            <p>No customers yet</p>
           </div>
         ) : (
-          <table className="w-full">
+          <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Contact</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Bookings</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Joined</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Phone
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Bookings
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody>
-              {customers.map((customer: any) => (
-                <tr key={customer.id} className="border-t border-gray-200 hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900">{customer.name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600 space-y-1">
-                    {customer.phone && (
-                      <div className="flex items-center gap-2">
-                        <Phone size={14} className="text-gray-400" />
-                        <a href={`tel:${customer.phone}`} className="hover:text-blue-600">
-                          {customer.phone}
-                        </a>
-                      </div>
-                    )}
-                    {customer.email && (
-                      <div className="flex items-center gap-2">
-                        <Mail size={14} className="text-gray-400" />
-                        <a href={`mailto:${customer.email}`} className="hover:text-blue-600">
-                          {customer.email}
-                        </a>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold">
-                      {customer._count.bookings}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <Calendar size={14} className="text-gray-400" />
-                      {new Date(customer.createdAt).toLocaleDateString()}
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredCustomers.map((customer) => (
+                <tr key={customer.id}>
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-medium text-gray-900">
+                      {customer.name}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-600">{customer.email}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-600">{customer.phone}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-medium text-gray-900">
+                      {customer._count.bookings}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <Button variant="ghost" size="sm" className="mr-2">
+                      View
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600"
+                      onClick={() => handleDelete(customer.id)}
+                    >
+                      Delete
+                    </Button>
                   </td>
                 </tr>
               ))}
