@@ -16,7 +16,7 @@ interface Service {
 }
 
 export default function ServiceDetailPage() {
-  const params = useParams();
+  const params =  useParams();
   const router = useRouter();
   const store = params.store as string;
   const serviceSlug = params.serviceSlug as string;

@@ -12,7 +12,7 @@ export default function CustomerSignupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const store = params.store as string;
-  const redirect = searchParams.get('redirect');
+  const serviceId = searchParams.get('service');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -27,7 +27,7 @@ export default function CustomerSignupPage() {
   useEffect(() => {
     const session = localStorage.getItem('customerSession');
     if (session) {
-      router.push(`/${store}/customer/bookings`);
+      router.push(`/${store}`);
     }
   }, []);
 
@@ -37,6 +37,11 @@ export default function CustomerSignupPage() {
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
       return;
     }
 
@@ -50,25 +55,17 @@ export default function CustomerSignupPage() {
       password: formData.password,
     });
 
-    if (result.success && result.customer) {
-      // Auto login after signup
-      const customer = result.customer;
-      localStorage.setItem(
-        'customerSession',
-        JSON.stringify({
-          customerId: customer.id,
-          name: customer.name,
-          email: customer.email,
-          phone: customer.phone,
-          tenantId: '',
-          tenantSlug: store,
-        })
-      );
+    console.log('📝 Signup result:', result); // ✅ Debug log
 
-      if (redirect === 'booking') {
-        router.push(`/${store}/customer/booking?service=${searchParams.get('service')}`);
+    if (result.success && result.customer) {
+      // ✅ Store the customer object directly - it already has all fields including tenantId
+      console.log('✅ Storing session:', result.customer);
+      localStorage.setItem('customerSession', JSON.stringify(result.customer));
+
+      if (serviceId) {
+        router.push(`/${store}/customer/booking?service=${serviceId}`);
       } else {
-        router.push(`/${store}/customer/bookings`);
+        router.push(`/${store}`);
       }
     } else {
       setError(result.error || 'Signup failed');
@@ -82,7 +79,7 @@ export default function CustomerSignupPage() {
       <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
-          <p className="text-gray-600">Book your first appointment</p>
+          <p className="text-gray-600">Join us today</p>
         </div>
 
         {error && (
@@ -143,6 +140,7 @@ export default function CustomerSignupPage() {
               onChange={(e) =>
                 setFormData({ ...formData, password: e.target.value })
               }
+              minLength={6}
               required
             />
           </div>
@@ -173,7 +171,7 @@ export default function CustomerSignupPage() {
         <div className="mt-6 text-center">
           <p className="text-gray-600 mb-3">Already have an account?</p>
           <Link
-            href={`/${store}/customer/login?redirect=${redirect}&service=${searchParams.get('service')}`}
+            href={`/${store}/customer/login${serviceId ? `?service=${serviceId}` : ''}`}
             className="text-blue-600 hover:text-blue-700 font-semibold"
           >
             Login

@@ -12,7 +12,7 @@ export default function CustomerLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const store = params.store as string;
-  const redirect = searchParams.get('redirect');
+  const serviceId = searchParams.get('service');
 
   const [formData, setFormData] = useState({
     email: '',
@@ -24,10 +24,10 @@ export default function CustomerLoginPage() {
   useEffect(() => {
     const session = localStorage.getItem('customerSession');
     if (session) {
-      if (redirect === 'booking') {
-        router.push(`/${store}/customer/booking?service=${searchParams.get('service')}`);
+      if (serviceId) {
+        router.push(`/${store}/customer/booking?service=${serviceId}`);
       } else {
-        router.push(`/${store}/customer/bookings`);
+        router.push(`/${store}`);
       }
     }
   }, []);
@@ -43,13 +43,17 @@ export default function CustomerLoginPage() {
       password: formData.password,
     });
 
+    console.log('🔐 Login result:', result); // ✅ Debug log
+
     if (result.success && result.customer) {
+      // ✅ Store the customer object directly - it already has all fields
+      console.log('✅ Storing session:', result.customer);
       localStorage.setItem('customerSession', JSON.stringify(result.customer));
 
-      if (redirect === 'booking') {
-        router.push(`/${store}/customer/booking?service=${searchParams.get('service')}`);
+      if (serviceId) {
+        router.push(`/${store}/customer/booking?service=${serviceId}`);
       } else {
-        router.push(`/${store}/customer/bookings`);
+        router.push(`/${store}`);
       }
     } else {
       setError(result.error || 'Login failed');
@@ -113,7 +117,7 @@ export default function CustomerLoginPage() {
         <div className="mt-6 text-center">
           <p className="text-gray-600 mb-3">Don't have an account?</p>
           <Link
-            href={`/${store}/customer/signup?redirect=${redirect}&service=${searchParams.get('service')}`}
+            href={`/${store}/customer/signup${serviceId ? `?service=${serviceId}` : ''}`}
             className="text-blue-600 hover:text-blue-700 font-semibold"
           >
             Create Account

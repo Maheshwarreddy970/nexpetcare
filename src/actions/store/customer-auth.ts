@@ -48,13 +48,16 @@ export async function customerSignupAction(data: {
       return { success: false, error: 'Failed to create account' };
     }
 
+    // ✅ Return consistent format with login action
     return {
       success: true,
       customer: {
-        id: customer.id,
+        customerId: customer.id,  // ✅ Changed from 'id' to 'customerId' for consistency
         name: customer.name,
         email: customer.email,
         phone: customer.phone,
+        tenantId: tenant.id,      // ✅ Added tenantId
+        tenantSlug: data.storeSlug, // ✅ Added tenantSlug
       },
       message: 'Account created successfully!',
     };

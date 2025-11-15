@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getTenantBySlugAction } from '@/actions/store/tenant';
+import { LogOut, User } from 'lucide-react';
 
 interface Tenant {
   id: string;
@@ -14,18 +15,31 @@ interface Tenant {
   websiteData: any;
 }
 
+interface CustomerSession {
+  customerId: string;
+  name: string;
+  email: string;
+  phone: string;
+  tenantId: string;
+  tenantSlug: string;
+}
+
 export default function StoreLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const params = useParams();
+  const router = useRouter();
   const store = params.store as string;
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
+  const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   useEffect(() => {
     fetchTenant();
+    checkCustomerSession();
   }, [store]);
 
   const fetchTenant = async () => {
@@ -34,6 +48,37 @@ export default function StoreLayout({
       setTenant(result.tenant as Tenant);
     }
     setLoading(false);
+  };
+
+  const checkCustomerSession = () => {
+    const session = localStorage.getItem('customerSession');
+    if (session) {
+      try {
+        const parsedSession = JSON.parse(session);
+        // ✅ Only set session if it belongs to this tenant
+        if (parsedSession.tenantSlug === store) {
+          setCustomerSession(parsedSession);
+        }
+      } catch (error) {
+        console.error('Invalid session data:', error);
+        localStorage.removeItem('customerSession');
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    // ✅ Clear session
+    localStorage.removeItem('customerSession');
+    setCustomerSession(null);
+    setShowUserMenu(false);
+    
+    // ✅ Redirect to home page
+    router.push(`/${store}`);
+    
+    // ✅ Show logout confirmation
+    setTimeout(() => {
+      alert('✅ Logged out successfully!');
+    }, 100);
   };
 
   if (loading) {
@@ -73,19 +118,83 @@ export default function StoreLayout({
                 Services
               </Link>
               <Link href={`/${store}/customer/bookings`} className="text-gray-700 hover:text-blue-600">
-                Book Now
+                My Bookings
               </Link>
               <Link href={`/${store}/contact`} className="text-gray-700 hover:text-blue-600">
                 Contact
               </Link>
             </nav>
 
-            <Link
-              href={`/${store}/services`}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Book Appointment
-            </Link>
+            <div className="flex items-center gap-3">
+              {/* ✅ Customer Account / Logout Section */}
+              {customerSession ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 hover:border-blue-600 hover:bg-blue-50 transition-colors"
+                  >
+                    <User className="h-4 w-4" />
+                    <span className="hidden sm:inline text-sm font-medium">
+                      {customerSession.name.split(' ')[0]}
+                    </span>
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {showUserMenu && (
+                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-2">
+                      <div className="px-4 py-3 border-b border-gray-200">
+                        <p className="text-sm font-semibold text-gray-900">
+                          {customerSession.name}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {customerSession.email}
+                        </p>
+                      </div>
+
+                      <Link
+                        href={`/${store}/customer/bookings`}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        My Bookings
+                      </Link>
+
+                      <Link
+                        href={`/${store}/customer/profile`}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        Profile Settings
+                      </Link>
+
+                      <div className="border-t border-gray-200 mt-2 pt-2">
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Link
+                  href={`/${store}/customer/login`}
+                  className="px-4 py-2 text-gray-700 hover:text-blue-600 font-medium"
+                >
+                  Login
+                </Link>
+              )}
+
+              <Link
+                href={`/${store}/services`}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Book Appointment
+              </Link>
+            </div>
           </div>
         </div>
       </header>
@@ -112,9 +221,17 @@ export default function StoreLayout({
                 <Link href={`/${store}/services`} className="block text-gray-400 hover:text-white">
                   Services
                 </Link>
-                <Link href={`/${store}/booking`} className="block text-gray-400 hover:text-white">
-                  Book Now
+                <Link href={`/${store}/customer/bookings`} className="block text-gray-400 hover:text-white">
+                  My Bookings
                 </Link>
+                {customerSession && (
+                  <button
+                    onClick={handleLogout}
+                    className="block text-gray-400 hover:text-white"
+                  >
+                    Logout
+                  </button>
+                )}
               </div>
             </div>
           </div>

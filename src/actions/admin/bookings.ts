@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/store/prisma';
+import { sendEmailNotification } from '@/lib/email';
 
 export async function getBookingsAction(tenantId: string) {
   try {
@@ -10,20 +11,18 @@ export async function getBookingsAction(tenantId: string) {
         include: {
           service: true,
           customer: true,
+          pet: true,
         },
         orderBy: { createdAt: 'desc' },
       })
       .catch(() => []);
 
-    // Convert dates to string
     const formattedBookings = (bookings || []).map((b) => ({
       id: b.id,
       status: b.status,
       service: b.service,
-      customer: {
-        name: b.customer.name,
-        email: b.customer.email,
-      },
+      customer: b.customer,
+      pet: b.pet,
       bookingDate: b.bookingDate.toISOString(),
       createdAt: b.createdAt.toISOString(),
     }));
@@ -40,19 +39,65 @@ export async function updateBookingStatusAction(
   status: 'pending' | 'confirmed' | 'completed' | 'canceled'
 ) {
   try {
-    const booking = await prisma.booking?.update({
+    const booking = await prisma.booking?.findUnique({
+      where: { id: bookingId },
+      include: {
+        service: true,
+        customer: true,
+        pet: true,
+        tenant: true,
+      },
+    });
+
+    if (!booking) {
+      return { success: false, error: 'Booking not found' };
+    }
+
+    // Update booking status
+    const updatedBooking = await prisma.booking?.update({
       where: { id: bookingId },
       data: { status },
       include: {
         service: true,
         customer: true,
+        pet: true,
       },
     });
 
+    // 📧 Send status update email
+    const bookingDate = booking.bookingDate.toLocaleDateString('en-IN', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const bookingTime = booking.bookingDate.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    if (status === 'confirmed') {
+      await sendEmailNotification('bookingConfirmed', booking.customer.email, {
+        customerName: booking.customer.name,
+        storeName: booking.tenant?.name || 'Pet Care',
+        serviceName: booking.service.name,
+        bookingDate,
+        bookingTime,
+      });
+    } else if (status === 'canceled') {
+      await sendEmailNotification('bookingCanceled', booking.customer.email, {
+        customerName: booking.customer.name,
+        storeName: booking.tenant?.name || 'Pet Care',
+        serviceName: booking.service.name,
+        bookingDate,
+      });
+    }
+
     return {
       success: true,
-      booking,
-      message: `Booking ${status} successfully`,
+      booking: updatedBooking,
+      message: `Booking ${status} and notification sent to customer`,
     };
   } catch (error) {
     console.error('Error updating booking:', error);
@@ -65,7 +110,22 @@ export async function cancelBookingAction(bookingId: string) {
     const booking = await prisma.booking?.update({
       where: { id: bookingId },
       data: { status: 'canceled' },
+      include: {
+        service: true,
+        customer: true,
+      },
     });
+
+    // 📧 Send cancellation email
+    if (booking) {
+      const bookingDate = booking.bookingDate.toLocaleDateString('en-IN');
+      await sendEmailNotification('bookingCanceled', booking.customer.email, {
+        customerName: booking.customer.name,
+        storeName: 'Pet Care',
+        serviceName: booking.service.name,
+        bookingDate,
+      });
+    }
 
     return { success: true, booking, message: 'Booking canceled' };
   } catch (error) {
